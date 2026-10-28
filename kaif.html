@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>От деления ядра к управляемому синтезу — интерактивный таймлайн</title>
+<style>
+@property --tl-accent { syntax: '<color>'; inherits: true; initial-value: #8b5cf6; }
+@property --tl-glow { syntax: '<color>'; inherits: true; initial-value: rgba(139,92,246,0.45); }
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #05070a; overflow: hidden; }
+
+#nucleartl {
+    --tl-bg: #05070a; --tl-surface: #0f172a; --tl-panel: rgba(15,23,42,0.55);
+    --tl-text: #e2e8f0; --tl-text-dim: #94a3b8; --tl-line: rgba(255,255,255,0.09);
+    --tl-accent: #8b5cf6; --tl-glow: rgba(139,92,246,0.45);
+    --tl-font: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    --tl-ep0: #8b5cf6; --tl-ep1: #f97316; --tl-ep2: #ef4444; --tl-ep3: #06b6d4;
+    --tl-vig: rgba(0,0,0,0.5);
+    width: 100vw; height: 100vh; height: 100dvh;
+    font-family: var(--tl-font); position: relative; overflow: hidden;
+    background: var(--tl-bg); color: var(--tl-text); touch-action: pan-y; outline: none;
+    transition: --tl-accent .9s ease, --tl-glow .9s ease, background .5s ease, color .5s ease;
+}
+#nucleartl[data-theme="light"] { --tl-bg: #faf6f0; --tl-surface: #f5ede0; --tl-panel: rgba(245,237,224,0.7); --tl-text: #3a342e; --tl-text-dim: #6e655c; --tl-line: rgba(0,0,0,0.10); --tl-vig: rgba(120,90,50,0.14); }
+#nucleartl[data-theme="light"][data-ep="0"] { --tl-accent: var(--tl-ep0); --tl-glow: rgba(139,92,246,0.25); }
+#nucleartl[data-theme="light"][data-ep="1"] { --tl-accent: var(--tl-ep1); --tl-glow: rgba(249,115,22,0.25); }
+#nucleartl[data-theme="light"][data-ep="2"] { --tl-accent: var(--tl-ep2); --tl-glow: rgba(239,68,68,0.25); }
+#nucleartl[data-theme="light"][data-ep="3"] { --tl-accent: var(--tl-ep3); --tl-glow: rgba(6,182,212,0.25); }
+#nucleartl[data-ep="0"] { --tl-accent: var(--tl-ep0); --tl-glow: rgba(139,92,246,0.45); }
+#nucleartl[data-ep="1"] { --tl-accent: var(--tl-ep1); --tl-glow: rgba(249,115,22,0.45); }
+#nucleartl[data-ep="2"] { --tl-accent: var(--tl-ep2); --tl-glow: rgba(239,68,68,0.45); }
+#nucleartl[data-ep="3"] { --tl-accent: var(--tl-ep3); --tl-glow: rgba(6,182,212,0.45); }
+#nucleartl[data-theme="light"][data-ep="0"] { --tl-glow: rgba(139,92,246,0.25); }
+#nucleartl[data-theme="light"][data-ep="1"] { --tl-glow: rgba(249,115,22,0.25); }
+#nucleartl[data-theme="light"][data-ep="2"] { --tl-glow: rgba(239,68,68,0.25); }
+#nucleartl[data-theme="light"][data-ep="3"] { --tl-glow: rgba(6,182,212,0.25); }
+
+/* Прожектор за курсором + виньетка */
+#nucleartl::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(560px circle at var(--mx, 50%) var(--my, 40%), var(--tl-glow), transparent 65%); opacity: .55; }
+#nucleartl::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, var(--tl-vig)); }
+#nucleartl .tl-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+#nucleartl .tl-flash { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 50%, var(--tl-glow), transparent 60%); }
+#nucleartl .tl-flash.go { animation: tlFlash 1.1s ease-out; }
+@keyframes tlFlash { 0% { opacity: .95; transform: scale(.5); } 100% { opacity: 0; transform: scale(1.9); } }
+
+#nucleartl .tl-shell { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
+#nucleartl .tl-header { display: flex; justify-content: space-between; align-items: center; padding: calc(14px + env(safe-area-inset-top, 0px)) 18px 10px; background: var(--tl-panel); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--tl-line); }
+#nucleartl .tl-brand { font-size: clamp(14px, 1.1vw, 17px); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--tl-accent); text-shadow: 0 0 14px var(--tl-glow); }
+#nucleartl .tl-theme-toggle { background: transparent; border: 1px solid var(--tl-line); color: var(--tl-text); border-radius: 999px; padding: 6px 12px; font-size: 14px; cursor: pointer; transition: transform .3s cubic-bezier(.2,.8,.2,1), background .2s; }
+#nucleartl .tl-theme-toggle:hover { background: rgba(255,255,255,0.08); transform: rotate(20deg) scale(1.1); }
+
+#nucleartl .tl-eras { display: flex; gap: 8px; overflow: auto; padding: 10px 18px; scrollbar-width: none; }
+#nucleartl .tl-eras::-webkit-scrollbar { display: none; }
+#nucleartl .tl-era { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--tl-line); background: var(--tl-panel); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: var(--tl-text-dim); font-size: clamp(12px, 0.9vw, 13px); cursor: pointer; white-space: nowrap; transition: all .35s cubic-bezier(.2,.8,.2,1); }
+#nucleartl .tl-era:hover { border-color: var(--tl-accent); color: var(--tl-accent); transform: translateY(-2px); }
+#nucleartl .tl-era.is-active { background: linear-gradient(135deg, var(--tl-accent), color-mix(in srgb, var(--tl-accent) 55%, #fff)); color: #fff; border-color: transparent; animation: tlPulse 2.4s infinite; }
+@keyframes tlPulse { 0%,100% { box-shadow: 0 0 14px var(--tl-glow); } 50% { box-shadow: 0 0 28px var(--tl-glow); } }
+
+#nucleartl .tl-thermometer { height: 4px; background: rgba(255,255,255,0.06); position: relative; overflow: visible; }
+#nucleartl .tl-thermo-segments { position: absolute; inset: 0; display: flex; z-index: 1; opacity: .28; }
+#nucleartl .tl-thermo-fill { position: absolute; left: 0; top: 0; height: 100%; z-index: 2; background: var(--tl-accent); width: 0%; transition: width .9s cubic-bezier(.2,.8,.2,1); box-shadow: 0 0 14px var(--tl-glow); }
+#nucleartl .tl-thermo-fill::after { content: ""; position: absolute; right: -5px; top: 50%; width: 10px; height: 10px; border-radius: 50%; transform: translateY(-50%); background: #fff; box-shadow: 0 0 12px 3px var(--tl-accent); }
+
+#nucleartl .tl-minimap { display: flex; justify-content: center; gap: 7px; padding: 12px 18px 4px; }
+#nucleartl .tl-minidot { width: 7px; height: 7px; border-radius: 50%; background: var(--tl-text-dim); cursor: pointer; transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .3s, opacity .3s; border: 1px solid rgba(255,255,255,0.2); opacity: .55; }
+#nucleartl .tl-minidot:hover { transform: scale(1.5); opacity: .9; }
+#nucleartl .tl-minidot.is-active { transform: scale(1.8); opacity: 1; box-shadow: 0 0 12px var(--tl-accent); border-color: var(--tl-accent); }
+#nucleartl .tl-minidot:focus-visible { outline: 2px solid var(--tl-accent); outline-offset: 2px; }
+
+#nucleartl .tl-stage { flex: 1; position: relative; overflow: hidden; padding: 0 18px; perspective: 1100px; }
+#nucleartl .tl-slide { position: absolute; inset: 0 0 100px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 10px; box-sizing: border-box; animation: tlIn .8s cubic-bezier(.2,.8,.2,1) both; }
+#nucleartl .tl-slide.is-out { animation: tlOut .4s cubic-bezier(.5,0,.8,.4) both; pointer-events: none; }
+@keyframes tlIn { from { opacity: 0; transform: translateX(calc(var(--dir, 1) * 80px)) scale(.94); filter: blur(14px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes tlOut { to { opacity: 0; transform: translateX(calc(var(--dir, 1) * -80px)) scale(.96); filter: blur(10px); } }
+#nucleartl .tl-inner { display: flex; flex-direction: column; align-items: center; transform-style: preserve-3d; transform: rotateX(var(--ty, 0deg)) rotateY(var(--tx, 0deg)); transition: transform .3s ease-out; will-change: transform; }
+#nucleartl .tl-inner > * { animation: tlRise .9s cubic-bezier(.2,.8,.2,1) both; }
+#nucleartl .tl-inner > *:nth-child(2) { animation-delay: .08s; }
+#nucleartl .tl-inner > *:nth-child(3) { animation-delay: .16s; }
+#nucleartl .tl-inner > *:nth-child(4) { animation-delay: .26s; }
+@keyframes tlRise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+#nucleartl .tl-ghost { position: absolute; left: 50%; top: 50%; z-index: -1; transform: translate(calc(-50% + var(--px, 0) * -34px), calc(-50% + var(--py, 0) * -22px)); font-size: clamp(110px, 30vw, 380px); font-weight: 900; line-height: 1; letter-spacing: -.04em; color: transparent; -webkit-text-stroke: 1px var(--tl-accent); opacity: .16; pointer-events: none; white-space: nowrap; user-select: none; }
+
+#nucleartl .tl-atom { position: relative; width: 150px; height: 150px; margin: 0 auto 24px; }
+#nucleartl .tl-atom::after { content: ""; position: absolute; inset: 20%; border-radius: 50%; border: 1px solid var(--tl-accent); animation: tlRing 3s ease-out infinite; }
+@keyframes tlRing { from { transform: scale(.6); opacity: .8; } to { transform: scale(2.2); opacity: 0; } }
+#nucleartl .tl-nucleus { position: absolute; inset: 50%; width: 22px; height: 22px; background: var(--tl-accent); border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 18px var(--tl-glow), 0 0 40px var(--tl-glow); z-index: 3; animation: tlBeat 2s ease-in-out infinite; }
+@keyframes tlBeat { 0%,100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -50%) scale(1.25); } }
+#nucleartl .tl-orbit { position: absolute; inset: 50%; border: 1px solid rgba(255,255,255,0.14); border-radius: 50%; transform: translate(-50%, -50%); animation: tlOrbit linear infinite; }
+#nucleartl .tl-o1 { width: 70px; height: 70px; animation-duration: 4s; }
+#nucleartl .tl-o2 { width: 110px; height: 110px; animation-duration: 6s; animation-direction: reverse; }
+#nucleartl .tl-o3 { width: 150px; height: 150px; animation-duration: 8s; }
+#nucleartl .tl-electron { position: absolute; top: 0; left: 50%; width: 6px; height: 6px; background: #fff; border-radius: 50%; transform: translate(-50%, -100%); box-shadow: 0 0 8px #fff, 0 0 16px var(--tl-accent); }
+@keyframes tlOrbit { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+#nucleartl .tl-intro-title { font-size: clamp(20px, 2.6vw, 34px); font-weight: 900; line-height: 1.15; margin: 0 0 10px; background: linear-gradient(90deg, var(--tl-text), var(--tl-accent), var(--tl-text)); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent; animation: tlRise .9s cubic-bezier(.2,.8,.2,1) both, tlShine 6s linear infinite; }
+@keyframes tlShine { to { background-position: 200% center; } }
+#nucleartl .tl-intro-sub { font-size: clamp(13px, 1.2vw, 16px); color: var(--tl-text-dim); line-height: 1.55; max-width: 460px; margin: 0 auto; }
+
+#nucleartl .tl-date { margin: 10px 0 4px; font-variant-numeric: tabular-nums; }
+#nucleartl .tl-date-value { font-size: clamp(22px, 3.4vw, 46px); font-weight: 900; color: var(--tl-accent); text-shadow: 0 0 20px var(--tl-glow); letter-spacing: .04em; }
+#nucleartl .tl-date--long .tl-date-value { font-size: clamp(18px, 2.4vw, 32px); text-shadow: 0 0 12px var(--tl-glow); }
+
+#nucleartl .tl-title { font-size: clamp(18px, 2vw, 27px); font-weight: 800; margin: 6px 0 12px; line-height: 1.2; max-width: 620px; background: linear-gradient(90deg, var(--tl-text), color-mix(in srgb, var(--tl-accent) 60%, var(--tl-text))); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#nucleartl .tl-desc { font-size: clamp(13px, 1.1vw, 15px); line-height: 1.6; color: var(--tl-text-dim); max-width: 470px; margin: 0 auto 14px; }
+#nucleartl .tl-fact { position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; background: var(--tl-panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--tl-line); border-left: 3px solid var(--tl-accent); border-radius: 12px; padding: 12px 16px; font-size: clamp(12px, 1vw, 13px); color: var(--tl-text); max-width: 470px; margin: 0 auto; text-align: left; box-shadow: 0 12px 40px rgba(0,0,0,0.25), 0 0 24px var(--tl-glow); transition: transform .35s cubic-bezier(.2,.8,.2,1); }
+#nucleartl .tl-fact::after { content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.14), transparent); transform: skewX(-20deg); animation: tlSweep 5s ease-in-out 1.2s infinite; }
+@keyframes tlSweep { 0% { left: -60%; } 40%,100% { left: 130%; } }
+#nucleartl .tl-fact:hover { transform: translateY(-3px) scale(1.02); }
+
+#nucleartl .tl-source-wrap { position: absolute; top: 14px; right: 14px; z-index: 4; }
+#nucleartl .tl-source { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--tl-panel); color: var(--tl-text-dim); font-size: 14px; cursor: pointer; border: 1px solid var(--tl-line); text-decoration: none; transition: all .3s; }
+#nucleartl .tl-source:hover { color: var(--tl-accent); border-color: var(--tl-accent); box-shadow: 0 0 14px var(--tl-glow); transform: scale(1.12); }
+#nucleartl .tl-tooltip { position: absolute; top: 34px; right: 0; background: var(--tl-surface); border: 1px solid var(--tl-line); color: var(--tl-text); padding: 8px 10px; border-radius: 8px; font-size: 12px; white-space: nowrap; opacity: 0; transform: translateY(-4px); pointer-events: none; transition: opacity .25s, transform .25s; box-shadow: 0 10px 25px rgba(0,0,0,0.35); }
+#nucleartl .tl-source-wrap:hover .tl-tooltip { opacity: 1; transform: none; }
+
+#nucleartl .tl-nav { position: absolute; top: 50%; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 16px; z-index: 10; transform: translateY(-50%); pointer-events: none; }
+#nucleartl .tl-arrow { pointer-events: auto; width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--tl-line); background: var(--tl-panel); color: var(--tl-text); font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: all .3s cubic-bezier(.2,.8,.2,1); }
+#nucleartl .tl-arrow:hover { background: rgba(255,255,255,0.1); color: var(--tl-accent); border-color: var(--tl-accent); transform: scale(1.12); box-shadow: 0 0 20px var(--tl-glow); }
+#nucleartl .tl-arrow:active { transform: scale(.92); }
+#nucleartl .tl-arrow:focus-visible { outline: 2px solid var(--tl-accent); outline-offset: 2px; }
+#nucleartl .tl-arrow:disabled { opacity: 0.25; cursor: not-allowed; transform: none; box-shadow: none; }
+
+#nucleartl .tl-tray { position: absolute; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); left: 0; right: 0; display: flex; gap: 8px; overflow-x: auto; padding: 14px 18px 22px; scrollbar-width: none; z-index: 5; }
+#nucleartl .tl-tray::-webkit-scrollbar { display: none; }
+#nucleartl .tl-tray-card { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 118px; padding: 8px 6px; border-radius: 12px; border: 1px solid var(--tl-line); background: var(--tl-panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--tl-text-dim); font-size: 11px; cursor: pointer; transition: transform .4s cubic-bezier(.2,.8,.2,1), box-shadow .3s, border-color .3s, color .3s; white-space: normal; text-align: center; }
+#nucleartl .tl-tray-card:hover { transform: translateY(-3px); border-color: var(--tl-accent); }
+#nucleartl .tl-tray-card.is-active { color: var(--tl-text); border-color: var(--tl-accent); box-shadow: 0 0 18px var(--tl-glow); transform: translateY(-8px) scale(1.04); background: rgba(255,255,255,0.05); }
+#nucleartl .tl-tray-card .tl-tray-date { font-weight: 800; color: var(--tl-accent); font-size: 13px; }
+#nucleartl .tl-tray-card .tl-tray-title { font-size: 11px; line-height: 1.3; }
+
+#nucleartl .tl-hint { position: absolute; bottom: 118px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--tl-text-dim); background: rgba(0,0,0,0.35); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--tl-line); white-space: nowrap; opacity: 1; transition: opacity .6s ease; pointer-events: none; z-index: 6; }
+#nucleartl .tl-hint.is-gone { opacity: 0; }
+
+@media (max-width: 560px) {
+    #nucleartl .tl-nav { top: auto; bottom: calc(118px + env(safe-area-inset-bottom, 0px)); transform: none; justify-content: center; gap: 12px; padding: 0; }
+    #nucleartl .tl-arrow { width: 40px; height: 40px; font-size: 20px; }
+    #nucleartl .tl-slide { inset: 0 0 170px 0; }
+    #nucleartl .tl-hint { bottom: 170px; }
+    #nucleartl .tl-title { font-size: clamp(16px, 4.4vw, 21px); }
+    #nucleartl .tl-desc { font-size: clamp(12px, 3.5vw, 14px); max-width: 290px; }
+    #nucleartl .tl-fact { max-width: 290px; font-size: 12px; padding: 10px 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #nucleartl *, #nucleartl::before { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="nucleartl" tabindex="0" role="region" aria-label="Интерактивный таймлайн" data-ready="false">
+  <canvas class="tl-canvas"></canvas>
+  <div class="tl-flash"></div>
+  <div class="tl-shell">
+    <header class="tl-header"><div class="tl-brand">ЯДЕРНЫЙ ТАЙМЛАЙН</div><button class="tl-theme-toggle" aria-label="Переключить тему">🌙</button></header>
+    <div class="tl-eras" role="tablist" aria-label="Эпохи"></div>
+    <div class="tl-thermometer"><div class="tl-thermo-fill"></div><div class="tl-thermo-segments"></div></div>
+    <div class="tl-minimap" role="navigation" aria-label="Мини-карта событий"></div>
+    <main class="tl-stage"></main>
+    <nav class="tl-nav" aria-label="Навигация"><button class="tl-arrow tl-arrow--prev" aria-label="Назад">‹</button><button class="tl-arrow tl-arrow--next" aria-label="Вперёд">›</button></nav>
+    <div class="tl-hint" id="tlHint">← → стрелками • колесо • свайп • клик по точке</div>
+    <div class="tl-tray" role="list" aria-label="Лента событий"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const host = document.getElementById('nucleartl');
+  if (!host || host.dataset.ready === 'true') return;
+  host.dataset.ready = 'true';
+
+  const P = [
+    { name: 'Открытие энергии звезды', years: '1920–1942', c: '--tl-ep0' },
+    { name: 'Атомная эра', years: '1945–1968', c: '--tl-ep1' },
+    { name: 'Безопасность и термоядерный поворот', years: '1985–2022', c: '--tl-ep2' },
+    { name: 'Современность: Китай', years: '2025–2026', c: '--tl-ep3' }
+  ];
+
+  const E = [
+    { p: 0, date: '1920', title: 'Эддингтон: звёзды светят за счёт синтеза', desc: 'Артур Эддингтон объединяет измерения концентрации гелия Астона с формулой Эйнштейна E=mc² и предполагает, что звёзды черпают энергию из слияния лёгких ядер.', fact: 'Эддингтон предсказал энергию синтеза ещё до того, как физики узнали, что такое нейтрон.', src: 'https://en.wikipedia.org/wiki/Arthur_Eddington' },
+    { p: 0, date: '1934', title: 'Резерфорд впервые видит синтез в лаборатории', desc: 'В Кавендишской лаборатории Резерфорд, Олифант и Хартек экспериментально наблюдают реакции синтеза лёгких ядер.', fact: 'Первый лабораторный синтез получили, обстреляв дейтерий дейтеронами.', src: 'https://www.nobelprize.org/prizes/chemistry/1908/rutherford/facts/' },
+    { p: 0, date: '1938', title: 'Открыто деление ядра', desc: 'Ган и Штрассман обнаруживают деление ядра урана; Лиза Мейтнер и Отто Фриш дают физическое объяснение.', fact: 'Термин «деление» введен по аналогии с биологическим делением клеток.', src: 'https://www.nobelprize.org/prizes/chemistry/1944/hahn/facts/' },
+    { p: 0, date: '1942', title: 'Chicago Pile-1: первая цепная реакция', desc: 'Под руководством Энрико Ферми в Чикаго запущен первый в мире искусственный ядерный реактор.', fact: 'Реактор собирали из графитовых кирпичей под трибунами стадиона Университета Чикаго.', src: 'https://www.ne.anl.gov/cp1-anniversary/' },
+    { p: 1, date: '1945', title: 'Тринити и Хиросима: атом выходит из-под контроля', desc: 'Первое ядерное испытание «Тринити», затем бомбардировки Хиросимы и Нагасаки.', fact: 'Взрыв «Тринити» разогрел воздух до температуры, в несколько раз превышающей температуру поверхности Солнца.', src: 'https://ahf.nuclearmuseum.org/ahf/history/trinity-test-1945/' },
+    { p: 1, date: '1951', title: 'EBR-I: первое электричество из деления', desc: 'Реактор в Айдахо зажигает четыре 200-ваттные лампочки — первая электрическая энергия от ядерного деления.', fact: 'Энергии хватило всего на четыре лампочки, но с них началась коммерческая атомная энергетика.', src: 'https://inl.gov/ebr-i/' },
+    { p: 1, date: '1954', title: 'Обнинск: первая АЭС в сети', desc: 'Первая в мире атомная станция промышленного типа подключается к Московской энергосети.', fact: 'Мощность первой обнинской единицы составляла всего 6 МВт.', src: 'https://www.world-nuclear.org/information-library/country-profiles/countries-o-s/russia-nuclear-power.aspx' },
+    { p: 1, date: '1957', title: 'МАГАТЭ: атом под международным присмотром', desc: 'Вступает в силу Устав МАГАТЭ для продвижения мирного применения ядерных технологий.', fact: 'МАГАТЭ было создано по инициативе Эйзенхауэра в рамках программы «Атомы во имя мира».', src: 'https://www.iaea.org/about/overview/history' },
+    { p: 1, date: '1958', title: 'Лоусон и критерий термоядерного реактора', desc: 'Джон Лоусон формулирует критерий, связывающий температуру, плотность и время удержания плазмы.', fact: 'Критерий Лоусона записывается как n·T·τ > порог и используется при оценке токамаков.', src: 'https://www.iter.org/sci/fusion' },
+    { p: 1, date: '1968', title: 'Токамак Т-3: СССР задаёт стандарт', desc: 'Советский токамак Т-3 демонстрирует высокую температуру плазмы, убеждая мир в работоспособности магнитного удержания.', fact: 'После Т-3 большинство стран переориентировались на токамак.', src: 'https://www.iter.org/mach/tokamak' },
+    { p: 2, date: '1985', title: 'Рейган и Горбачёв запускают ITER', desc: 'США и СССР договариваются о совместном международном проекте термоядерного реактора ITER.', fact: 'Идея проекта была озвучена на встрече в Женеве как символ перестройки отношений.', src: 'https://www.iter.org/proj/inafewlines' },
+    { p: 2, date: '1986', title: 'Чернобыль: предел «деления без ошибок»', desc: 'Авария на четвёртом энергоблоке Чернобыльской АЭС.', fact: 'Чернобыль вынудил мир пересмотреть стандарты безопасности и усилить надзор МАГАТЭ.', src: 'https://www.iaea.org/newscenter/focus/chernobyl' },
+    { p: 2, date: '2011', title: 'Фукусима: второй удар по доверию', desc: 'Землетрясение и цунами выводят из строя системы охлаждения на АЭС «Фукусима-1».', fact: 'Фукусима стала катализатором отказа Германии и ряда стран от ядерной энергетики.', src: 'https://www.iaea.org/newscenter/focus/fukushima' },
+    { p: 2, date: '2022', title: 'NIF: термоядерное зажигание в лаборатории', desc: 'Лазеры вкладывают 2,05 МДж, синтез даёт 3,15 МДж — впервые выход превышает вложенную энергию.', fact: 'Для зажигания использовались 192 лазерных луча, сфокусированных на шарике топлива размером с горчичное зерно.', src: 'https://lasers.llnl.gov/science/achieving-fusion-ignition' },
+    { p: 3, date: '2025', title: 'EAST: 1066 секунд на 100 миллионах градусов', desc: 'Китайский токамак EAST удерживает плазму свыше 100 млн °C в течение 1066 секунд.', fact: 'Более 17 минут удержания сверхгорячей плазмы — рекорд для токамаков с сверхпроводящими катушками.', src: 'http://www.bfse.cas.cn/wlyhx/kyjz_138199/202503/t20250305_5048764.html' },
+    { p: 3, date: '1 октября 2026', title: 'BEST: площадка сдана, «сердце» реактора собирают', desc: 'Китай вводит в эксплуатацию комплекс проекта BEST в Хэфэе; ведётся монтаж вакуумной камеры, криоэкрана и тороидальных магнитов.', fact: 'BEST позиционируется как следующий шаг после EAST.', src: 'https://www.iter.org/' },
+    { p: 3, date: '13 октября 2026', title: 'Linglong One: горячие испытания перед загрузкой топлива', desc: 'На АЭС «Чанцзян» на Хайнане малый модульный реактор ACP100 мощностью 125 МВт входит в фазу горячих испытаний.', fact: 'Linglong One станет первым в мире коммерческим модульным реактором по стандартам МАГАТЭ.', src: 'https://www.neimagazine.com/news/hot-testing-for-linglong-one/' },
+    { p: 3, date: '15 октября 2026', title: 'EXL-50U: 100 миллионов реакций в секунду на «безнейтронном» топливе', desc: 'Частная компания ENN Group на сферической установке EXL-50U достигает более 100 млн реакций синтеза в секунду на топливе водород-бор (p-¹¹B). Результат подтверждён более чем десятью международными экспертами.', fact: 'Реакция водород-бор не выделяет нейтронов, открывая путь к термояду без радиоактивной активации конструкции.', src: 'https://naked-science.ru/community/1219303' },
+    { p: 3, date: '20 октября 2026', title: 'Микрореакторы: «ядерный power bank» пошёл в народ', desc: 'В Китае учреждается компания Sichuan Energy Nuclear Industry для вывода микрореакторов 1–10 МВт в промышленную эксплуатацию.', fact: 'Микрореакторы можно перевозить на грузовиках и подключать к изолированным поселениям.', src: 'http://ysp.net.sasac.gov.cn/n2588025/n2588129/c36080922/content.html' },
+    { p: 3, date: null, title: 'Итог: Китай замыкает два контура', desc: 'В один день Китай демонстрирует результат по двум направлениям: EXL-50U — прорыв в «чистом» термояде; Linglong One и микрореакторы — переупаковка классического деления в модульные форматы. Китай одновременно строит инфраструктуру для двух типов ядерной энергетики будущего.', fact: null, src: null }
+  ];
+
+  const stage = host.querySelector('.tl-stage');
+  const erasBox = host.querySelector('.tl-eras');
+  const minimap = host.querySelector('.tl-minimap');
+  const tray = host.querySelector('.tl-tray');
+  const thermoFill = host.querySelector('.tl-thermo-fill');
+  const segmentsBox = host.querySelector('.tl-thermo-segments');
+  const themeBtn = host.querySelector('.tl-theme-toggle');
+  const hint = host.querySelector('#tlHint');
+  const flash = host.querySelector('.tl-flash');
+  const prevBtn = host.querySelector('.tl-arrow--prev');
+  const nextBtn = host.querySelector('.tl-arrow--next');
+
+  let current = 0, lastEp = -1, prevYear = 1920, cntTok = 0;
+  const total = 1 + E.length;
+  const epColors = ['#8b5cf6', '#f97316', '#ef4444', '#06b6d4'];
+
+  P.forEach((ep, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'tl-era'; b.dataset.ep = i;
+    b.textContent = ep.name + ' (' + ep.years + ')';
+    b.addEventListener('click', () => {
+      const idx = E.findIndex(e => e.p === i);
+      goTo(idx >= 0 ? idx + 1 : 0);
+    });
+    erasBox.appendChild(b);
+  });
+
+  E.forEach((ev, i) => {
+    const d = document.createElement('span');
+    d.className = 'tl-minidot'; d.dataset.index = i + 1;
+    d.style.background = 'var(' + P[ev.p].c + ')';
+    d.title = (ev.date ? ev.date + ' — ' + ev.title : ev.title);
+    d.tabIndex = 0;
+    d.addEventListener('click', () => goTo(i + 1));
+    d.addEventListener('keydown', e => { if (e.key === 'Enter') goTo(i + 1); });
+    minimap.appendChild(d);
+  });
+
+  E.forEach((ev, i) => {
+    const c = document.createElement('div');
+    c.className = 'tl-tray-card'; c.dataset.index = i + 1;
+    c.innerHTML = '<span class="tl-tray-date">' + (ev.date || '—') + '</span><span class="tl-tray-title">' + ev.title + '</span>';
+    c.tabIndex = 0;
+    c.addEventListener('click', () => goTo(i + 1));
+    c.addEventListener('keydown', e => { if (e.key === 'Enter') goTo(i + 1); });
+    tray.appendChild(c);
+  });
+
+  let acc = 0;
+  P.forEach((ep, i) => {
+    const w = E.filter(e => e.p === i).length / E.length * 100;
+    const seg = document.createElement('div');
+    seg.style.cssText = 'position:absolute;top:0;bottom:0;background:var(' + ep.c + ');width:' + w + '%;left:' + acc + '%';
+    segmentsBox.appendChild(seg);
+    acc += w;
+  });
+
+  function setTheme(light) {
+    host.setAttribute('data-theme', light ? 'light' : 'dark');
+    themeBtn.textContent = light ? '☀' : '🌙';
+  }
+  setTheme(false);
+  themeBtn.addEventListener('click', () => setTheme(host.getAttribute('data-theme') !== 'light'));
+
+  // Эффект «счётчик времени» для года
+  function countTo(el, target) {
+    const tk = ++cntTok, from = prevYear, t0 = performance.now();
+    prevYear = target;
+    (function f(t) {
+      if (tk !== cntTok) return;
+      const k = Math.min(1, (t - t0) / 850), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = Math.round(from + (target - from) * e);
+      if (k < 1) requestAnimationFrame(f);
+    })(t0);
+  }
+
+  function renderSlide(s, dir) {
+    const old = stage.querySelector('.tl-slide:not(.is-out)');
+    stage.querySelectorAll('.is-out').forEach(n => n.remove());
+    if (old) { old.style.setProperty('--dir', dir); old.classList.add('is-out'); setTimeout(() => old.remove(), 420); }
+
+    const slide = document.createElement('div');
+    slide.className = 'tl-slide';
+    slide.style.setProperty('--dir', dir);
+    let epIdx = -1, ev = null, yearEl = null;
+
+    if (s === 0) {
+      slide.innerHTML = `
+        <div class="tl-inner">
+          <div class="tl-atom">
+            <div class="tl-nucleus"></div>
+            <div class="tl-orbit tl-o1"><div class="tl-electron"></div></div>
+            <div class="tl-orbit tl-o2"><div class="tl-electron"></div></div>
+            <div class="tl-orbit tl-o3"><div class="tl-electron"></div></div>
+          </div>
+          <h1 class="tl-intro-title">От деления ядра к управляемому синтезу</h1>
+          <p class="tl-intro-sub">20 ключевых дат, 1920–2026 — путь человечества к энергии звёзд.<br>Нажмите › или кликните по точке, чтобы начать.</p>
+        </div>`;
+    } else {
+      ev = E[s - 1]; epIdx = ev.p;
+      const isLong = ev.date && /\s/.test(ev.date);
+      const ym = ev.date && ev.date.match(/\d{4}/);
+      slide.innerHTML =
+        (ev.src ? `<div class="tl-source-wrap"><a class="tl-source" href="${ev.src}" target="_blank" rel="noopener" aria-label="Источник">ⓘ</a><div class="tl-tooltip">Открыть источник</div></div>` : '') +
+        `<div class="tl-ghost">${ym ? ym[0] : '2026'}</div>
+        <div class="tl-inner">
+          <div class="tl-date ${isLong ? 'tl-date--long' : ''}"><span class="tl-date-value">${ev.date !== null ? ev.date : '—'}</span></div>
+          <h2 class="tl-title">${ev.title}</h2>
+          <p class="tl-desc">${ev.desc}</p>
+          ${ev.fact ? `<div class="tl-fact"><strong>💡 Интересный факт:</strong> ${ev.fact}</div>` : ''}
+        </div>`;
+      if (ev.date && /^\d{4}$/.test(ev.date)) yearEl = slide.querySelector('.tl-date-value');
+      else if (ym) prevYear = +ym[0];
+    }
+
+    stage.appendChild(slide);
+    host.setAttribute('data-ep', String(epIdx));
+    if (yearEl) countTo(yearEl, +ev.date);
+    if (epIdx !== lastEp) {
+      flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+      tgt = hex(epColors[epIdx] || epColors[0]);
+      lastEp = epIdx;
+    }
+    updateUI();
+  }
+
+  function updateUI() {
+    host.querySelectorAll('.tl-era').forEach(b => {
+      b.classList.toggle('is-active', current > 0 && E[current - 1].p === parseInt(b.dataset.ep, 10));
+    });
+    host.querySelectorAll('.tl-minidot').forEach(d => {
+      d.classList.toggle('is-active', current === parseInt(d.dataset.index, 10));
+    });
+    host.querySelectorAll('.tl-tray-card').forEach(c => {
+      const on = current === parseInt(c.dataset.index, 10);
+      c.classList.toggle('is-active', on);
+      if (on) tray.scrollTo({ left: c.offsetLeft - tray.clientWidth / 2 + c.offsetWidth / 2, behavior: 'smooth' });
+    });
+    thermoFill.style.width = (current / (total - 1)) * 100 + '%';
+    prevBtn.disabled = current <= 0;
+    nextBtn.disabled = current >= total - 1;
+  }
+
+  function goTo(idx) {
+    if (idx < 0 || idx >= total || idx === current) return;
+    const dir = idx > current ? 1 : -1;
+    current = idx;
+    renderSlide(current, dir);
+    hint.classList.add('is-gone');
+  }
+
+  prevBtn.addEventListener('click', () => goTo(current - 1));
+  nextBtn.addEventListener('click', () => goTo(current + 1));
+
+  host.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') goTo(current - 1);
+    if (e.key === 'ArrowRight') goTo(current + 1);
+    if (e.key === 'Home') goTo(0);
+    if (e.key === 'End') goTo(total - 1);
+  });
+
+  let wheelLock = false;
+  host.addEventListener('wheel', e => {
+    if (wheelLock || e.target.closest('.tl-tray')) return;
+    const d = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (Math.abs(d) < 25) return;
+    wheelLock = true; goTo(current + (d > 0 ? 1 : -1));
+    setTimeout(() => { wheelLock = false; }, 700);
+  }, { passive: true });
+
+  let lastX = 0, touched = false;
+  host.addEventListener('touchstart', e => { touched = true; lastX = e.touches[0].clientX; }, { passive: true });
+  host.addEventListener('touchend', e => {
+    if (!touched) return;
+    const dx = e.changedTouches[0].clientX - lastX;
+    if (Math.abs(dx) > 40) goTo(dx > 0 ? current - 1 : current + 1);
+    touched = false;
+  });
+
+  // Курсор: прожектор, 3D-наклон, параллакс, притяжение частиц
+  const mouse = { x: -999, y: -999 };
+  host.addEventListener('pointermove', e => {
+    const r = host.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    mouse.x = x; mouse.y = y;
+    const px = (x / r.width - .5) * 2, py = (y / r.height - .5) * 2;
+    host.style.setProperty('--mx', x + 'px'); host.style.setProperty('--my', y + 'px');
+    host.style.setProperty('--px', px.toFixed(3)); host.style.setProperty('--py', py.toFixed(3));
+    if (e.pointerType === 'mouse') {
+      host.style.setProperty('--tx', (px * 5).toFixed(2) + 'deg');
+      host.style.setProperty('--ty', (-py * 4).toFixed(2) + 'deg');
+    }
+  });
+  host.addEventListener('pointerleave', () => {
+    mouse.x = mouse.y = -999;
+    host.style.setProperty('--tx', '0deg'); host.style.setProperty('--ty', '0deg');
+  });
+
+  // Фон: мягкие шары + сеть частиц, плавная смена цвета эпохи
+  const canvas = host.querySelector('.tl-canvas');
+  const ctx = canvas.getContext('2d');
+  const hex = c => [1, 3, 5].map(i => parseInt(c.substr(i, 2), 16));
+  let w, h, orbs = [], pts = [], cur = hex(epColors[0]), tgt = cur.slice();
+
+  function init() {
+    orbs = []; pts = [];
+    const no = Math.min(14, Math.floor(w / 90));
+    for (let i = 0; i < no; i++) orbs.push({ x: Math.random() * w, y: Math.random() * h, r: Math.random() * 60 + 30, vx: (Math.random() - .5) * .25, vy: (Math.random() - .5) * .25, a: Math.random() * .22 + .06 });
+    const np = Math.min(70, Math.floor(w * h / 16000));
+    for (let i = 0; i < np; i++) pts.push({ x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - .5) * .5, vy: (Math.random() - .5) * .5 });
+  }
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = host.clientWidth; h = host.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    init();
+  }
+  function draw() {
+    for (let i = 0; i < 3; i++) cur[i] += (tgt[i] - cur[i]) * .04;
+    const c = cur.map(Math.round).join(',');
+    ctx.clearRect(0, 0, w, h);
+    orbs.forEach(o => {
+      o.x += o.vx; o.y += o.vy;
+      if (o.x < 0 || o.x > w) o.vx *= -1;
+      if (o.y < 0 || o.y > h) o.vy *= -1;
+      const g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r);
+      g.addColorStop(0, 'rgba(' + c + ',' + o.a + ')'); g.addColorStop(1, 'rgba(' + c + ',0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2); ctx.fill();
+    });
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const dx = mouse.x - p.x, dy = mouse.y - p.y, d = Math.hypot(dx, dy);
+      if (d < 180 && d > 1) { p.vx += dx / d * .015; p.vy += dy / d * .015; }
+      p.vx *= .995; p.vy *= .995;
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0 || p.x > w) p.vx *= -1;
+      if (p.y < 0 || p.y > h) p.vy *= -1;
+      ctx.fillStyle = 'rgba(' + c + ',.7)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2); ctx.fill();
+      for (let j = i + 1; j < pts.length; j++) {
+        const q = pts[j], l = Math.hypot(p.x - q.x, p.y - q.y);
+        if (l < 110) {
+          ctx.strokeStyle = 'rgba(' + c + ',' + (.2 * (1 - l / 110)) + ')';
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  draw();
+  renderSlide(0, 1);
+  setTimeout(() => hint.classList.add('is-gone'), 6000);
+  try { host.focus({ preventScroll: true }); } catch (e) {}
+})();
+</script>
+</body>
+</html>
